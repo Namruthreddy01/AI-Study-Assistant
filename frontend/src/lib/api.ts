@@ -1,6 +1,10 @@
 import type {
   ChatMessage,
   DocumentItem,
+  Flashcard,
+  FlashcardListResponse,
+  FlashcardRating,
+  FlashcardReviewResponse,
   HistoryItem,
   Mcq,
   QuizScore,
@@ -52,6 +56,25 @@ export const api = {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ document_id: documentId, count, difficulty })
+    }),
+  generateFlashcards: (documentId: string, count: number, difficulty: string) =>
+    request<Flashcard[]>("/api/study/flashcards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ document_id: documentId, count, difficulty })
+    }),
+  listFlashcards: (documentId?: string, dueOnly?: boolean) => {
+    const params = new URLSearchParams();
+    if (documentId) params.append("document_id", documentId);
+    if (dueOnly) params.append("due_only", "true");
+    const query = params.toString() ? `?${params.toString()}` : "";
+    return request<FlashcardListResponse>(`/api/study/flashcards${query}`);
+  },
+  reviewFlashcard: (flashcardId: string, rating: FlashcardRating) =>
+    request<FlashcardReviewResponse>(`/api/study/flashcards/${flashcardId}/review`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rating })
     }),
   scoreQuiz: (documentId: string, questions: Mcq[], answers: Record<string, number>) =>
     request<QuizScore>("/api/study/quiz/score", {

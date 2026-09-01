@@ -108,3 +108,49 @@ class HistoryItem(BaseModel):
     document_name: str
     created_at: datetime
     detail: str
+
+
+class FlashcardGenerateRequest(BaseModel):
+    document_id: str
+    count: int = Field(default=10, ge=1, le=30)
+    difficulty: Literal["easy", "medium", "hard"] = "medium"
+
+
+class FlashcardResponse(BaseModel):
+    id: str
+    document_id: str
+    question: str
+    answer: str
+    source_page: int
+    source_filename: str
+    difficulty: str
+    repetitions: int
+    ease_factor: float
+    interval_days: int
+    next_review: datetime
+    last_reviewed: datetime | None = None
+    created_at: datetime
+    is_due: bool = True
+
+
+class FlashcardListResponse(BaseModel):
+    document_id: str | None = None
+    cards: list[FlashcardResponse]
+    total: int
+    due_count: int
+    new_count: int
+    learning_count: int
+
+
+class FlashcardReviewRequest(BaseModel):
+    rating: Literal["again", "hard", "good", "easy"]
+
+
+class FlashcardReviewResponse(BaseModel):
+    card: FlashcardResponse
+    rating: str
+    previous_interval: int
+    new_interval: int
+    previous_ease_factor: float
+    new_ease_factor: float
+    next_review: datetime

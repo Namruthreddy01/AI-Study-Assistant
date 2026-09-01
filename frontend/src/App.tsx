@@ -7,6 +7,7 @@ import {
   FileQuestion,
   FileText,
   History,
+  Layers,
   LayoutDashboard,
   Lightbulb,
   ListChecks,
@@ -16,10 +17,13 @@ import {
 import { api } from "./lib/api";
 import { ChatPanel } from "./components/ChatPanel";
 import { DocumentUploader } from "./components/DocumentUploader";
+import { FlashcardPanel } from "./components/FlashcardPanel";
 import { QuizPanel } from "./components/QuizPanel";
 import type {
   ChatMessage,
   DocumentItem,
+  Flashcard,
+  FlashcardRating,
   HistoryItem,
   Mcq,
   QuizScore,
@@ -27,13 +31,14 @@ import type {
   Summary
 } from "./types";
 
-type View = "dashboard" | "ask" | "summary" | "mcqs" | "revision" | "history";
+type View = "dashboard" | "ask" | "summary" | "mcqs" | "flashcards" | "revision" | "history";
 
 const nav = [
   { id: "dashboard" as View, label: "Overview", icon: LayoutDashboard },
   { id: "ask" as View, label: "Ask AI", icon: BrainCircuit },
   { id: "summary" as View, label: "Summary", icon: FileText },
   { id: "mcqs" as View, label: "MCQ Quiz", icon: ListChecks },
+  { id: "flashcards" as View, label: "Flashcards", icon: Layers },
   { id: "revision" as View, label: "Revision", icon: FileQuestion },
   { id: "history" as View, label: "Study history", icon: History }
 ];
@@ -46,6 +51,12 @@ export default function App() {
   const [summary, setSummary] = useState<Summary | null>(null);
   const [mcqs, setMcqs] = useState<Mcq[]>([]);
   const [revision, setRevision] = useState<RevisionQuestion[]>([]);
+  const [flashcards, setFlashcards] = useState<Flashcard[]>([]);
+  const [flashcardStats, setFlashcardStats] = useState({
+    due_count: 0,
+    new_count: 0,
+    learning_count: 0
+  });
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [quizResult, setQuizResult] = useState<QuizScore | null>(null);
   const [history, setHistory] = useState<HistoryItem[]>([]);
@@ -62,7 +73,10 @@ export default function App() {
     void api.documents()
       .then((items) => {
         setDocuments(items);
-        if (items[0]) setActiveId(items[0].id);
+        if (items[0]) {
+          setActiveId(items[0].id);
+          void loadFlashcards(items[0].id);
+        }
       })
       .catch(() => setNotice("Start the FastAPI server to connect your study workspace."));
   }, []);
@@ -87,12 +101,30 @@ export default function App() {
     return true;
   };
 
+  const loadFlashcards = async (docId?: string) => {
+    const targetId = docId ?? activeId;
+    if (!targetId) return;
+    try {
+      const response = await api.listFlashcards(targetId);
+      setFlashcards(response.cards);
+      setFlashcardStats({
+        due_count: response.due_count,
+        new_count: response.new_count,
+        learning_count: response.learning_count
+      });
+    } catch {
+      // Background fetch failure gracefully handled
+    }
+  };
+
   const upload = async (file: File) => {
     await execute(async () => {
       const document = await api.upload(file);
       setDocuments((items) => [document, ...items]);
       setActiveId(document.id);
       setMessages([]);
+      setFlashcards([]);
+      setFlashcardStats({ due_count: 0, new_count: 0, learning_count: 0 });
       setNotice(document.filename + " is processed and ready to study.");
     });
   };
@@ -137,6 +169,22 @@ export default function App() {
     });
   };
 
+  const makeFlashcards = async (count: number) => {
+    if (!withDocument()) return;
+    await execute(async () => {
+      await api.generateFlashcards(activeId, count, difficulty);
+      await loadFlashcards(activeId);
+      setNotice(`Generated ${count} flashcards for spaced repetition study.`);
+    });
+  };
+
+  const reviewCard = async (cardId: string, rating: FlashcardRating) => {
+    await execute(async () => {
+      await api.reviewFlashcard(cardId, rating);
+      await loadFlashcards(activeId);
+    });
+  };
+
   const submitQuiz = async () => {
     if (!withDocument() || !mcqs.length) return;
     await execute(async () => setQuizResult(await api.scoreQuiz(activeId, mcqs, answers)));
@@ -152,6 +200,7 @@ export default function App() {
     ask: "Ask AI",
     summary: "Smart summary",
     mcqs: "Knowledge check",
+    flashcards: "AI Flashcards & SRS",
     revision: "Revision questions",
     history: "Study history"
   };
@@ -171,7 +220,13 @@ export default function App() {
               <button
                 key={item.id}
                 className={"nav-item " + (view === item.id ? "active" : "")}
-                onClick={() => item.id === "history" ? void loadHistory() : setView(item.id)}
+                onClick={() => {
+                  if (item.id === "history") void loadHistory();
+                  else if (item.id === "flashcards") {
+                    if (activeId) void loadFlashcards(activeId);
+                    setView("flashcards");
+                  } else setView(item.id);
+                }}
               >
                 <Icon size={18} /> {item.label}
               </button>
@@ -219,7 +274,7 @@ export default function App() {
             <section className="stats">
               <div><span>Materials</span><strong>{documents.length}</strong><small>ready to study</small></div>
               <div><span>Pages indexed</span><strong>{documents.reduce((sum, item) => sum + item.pages, 0)}</strong><small>across your PDFs</small></div>
-              <div><span>Study tools</span><strong>4</strong><small>available now</small></div>
+              <div><span>Study tools</span><strong>5</strong><small>available now</small></div>
             </section>
             {selected ? <DocumentCard document={selected} /> : <div className="empty-state">Your uploaded materials will appear here.</div>}
           </div>
@@ -257,6 +312,30 @@ export default function App() {
               busy={working}
               onChoose={(questionId, answer) => setAnswers((items) => ({ ...items, [questionId]: answer }))}
               onSubmit={submitQuiz}
+            />
+          </div>
+        )}
+
+        {view === "flashcards" && (
+          <div className="page narrow">
+            <section className="section-heading">
+              <div>
+                <span className="eyebrow">SPACED REPETITION (SM-2)</span>
+                <h2>Active Recall &amp; Memory Practice</h2>
+              </div>
+            </section>
+            <FlashcardPanel
+              cards={flashcards}
+              dueCount={flashcardStats.due_count}
+              newCount={flashcardStats.new_count}
+              learningCount={flashcardStats.learning_count}
+              busy={working}
+              disabled={!activeId}
+              difficulty={difficulty}
+              onDifficultyChange={setDifficulty}
+              onGenerate={makeFlashcards}
+              onReview={reviewCard}
+              onRefresh={() => loadFlashcards(activeId)}
             />
           </div>
         )}

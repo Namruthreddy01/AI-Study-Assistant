@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
@@ -9,6 +10,9 @@ from app.core.config import Settings
 from app.core.errors import GenerationError, InvalidDocumentError
 from app.models.schemas import (
     ChatResponse,
+    FlashcardListResponse,
+    FlashcardResponse,
+    FlashcardReviewResponse,
     HistoryItem,
     Mcq,
     McqResponse,
@@ -24,6 +28,7 @@ from app.services.chunking import TextChunk, chunk_page_text
 from app.services.embeddings import EmbeddingProvider, HashEmbeddingProvider
 from app.services.llm import LlmProvider, OfflineStudyProvider, create_llm_provider
 from app.services.pdf_processor import PdfProcessor
+from app.services.srs import calculate_review_schedule
 from app.services.vector_store import VectorStore
 from app.storage.repository import DatabaseRepository
 
@@ -284,3 +289,159 @@ class StudyService:
 
     def history(self) -> list[HistoryItem]:
         return [HistoryItem(**item) for item in self.repository.list_history()]
+
+    def _offline_flashcards(
+        self, chunks: list[TextChunk], filename: str, document_id: str, count: int, difficulty: str
+    ) -> list[dict[str, Any]]:
+        items: list[tuple[int, str]] = []
+        for chunk in chunks:
+            sentences = self._sentences(chunk.text)
+            for s in sentences:
+                items.append((chunk.page, s))
+        if not items:
+            raise GenerationError("The document does not contain enough text to create flashcards.")
+
+        cards: list[dict[str, Any]] = []
+        for index in range(count):
+            page, fact = items[index % len(items)]
+            topic = self._topic(fact)
+            question = f"What is the key principle or definition regarding {topic}?"
+            answer = fact
+            cards.append(
+                {
+                    "id": str(uuid4()),
+                    "document_id": document_id,
+                    "question": question,
+                    "answer": answer,
+                    "source_page": page,
+                    "source_filename": filename,
+                    "difficulty": difficulty,
+                    "repetitions": 0,
+                    "ease_factor": 2.5,
+                    "interval_days": 0,
+                    "next_review": datetime.now(UTC),
+                    "last_reviewed": None,
+                    "created_at": datetime.now(UTC),
+                }
+            )
+        return cards
+
+    async def generate_flashcards(
+        self, document_id: str, count: int, difficulty: str
+    ) -> list[FlashcardResponse]:
+        document, chunks = self._document_and_chunks(document_id)
+        if isinstance(self.llm, OfflineStudyProvider):
+            cards_payload = self._offline_flashcards(
+                chunks, document["filename"], document_id, count, difficulty
+            )
+        else:
+            context = self._full_context(document_id)
+            instruction = (
+                f"Create exactly {count} {difficulty} flashcards for student revision. Return a JSON object "
+                "with a 'flashcards' array. Each item must have: "
+                "'question' (a clear conceptual or recall question), "
+                "'answer' (a concise, direct answer based strictly on the text), "
+                "'source_page' (integer page number where the answer was found, indicated in the context as [Page X]), "
+                "and 'difficulty' (string matching the requested difficulty). Never invent facts."
+            )
+            payload = await self.llm.generate_json("flashcards", context, instruction)
+            try:
+                raw_items = payload.get("flashcards", [])
+                cards_payload = []
+                for item in raw_items[:count]:
+                    page_val = item.get("source_page", 1)
+                    if not isinstance(page_val, int):
+                        try:
+                            page_val = int(page_val)
+                        except (ValueError, TypeError):
+                            page_val = 1
+                    cards_payload.append(
+                        {
+                            "id": str(uuid4()),
+                            "document_id": document_id,
+                            "question": str(item["question"]),
+                            "answer": str(item["answer"]),
+                            "source_page": page_val,
+                            "source_filename": document["filename"],
+                            "difficulty": difficulty,
+                            "repetitions": 0,
+                            "ease_factor": 2.5,
+                            "interval_days": 0,
+                            "next_review": datetime.now(UTC),
+                            "last_reviewed": None,
+                            "created_at": datetime.now(UTC),
+                        }
+                    )
+            except (KeyError, TypeError, ValueError) as error:
+                raise GenerationError("Could not create valid flashcards.") from error
+            if len(cards_payload) != count:
+                raise GenerationError("The AI returned fewer flashcards than requested. Try again.")
+
+        saved_records = self.repository.add_flashcards(cards_payload)
+        self.repository.add_history(
+            "Generated flashcards",
+            document_id,
+            document["filename"],
+            f"{len(saved_records)} {difficulty} cards",
+        )
+        return [FlashcardResponse(**record) for record in saved_records]
+
+    def list_flashcards(
+        self, document_id: str | None = None, due_only: bool = False
+    ) -> FlashcardListResponse:
+        records = self.repository.list_flashcards(document_id=document_id, due_only=due_only)
+        cards = [FlashcardResponse(**record) for record in records]
+        all_records = (
+            records
+            if not due_only
+            else self.repository.list_flashcards(document_id=document_id, due_only=False)
+        )
+        total = len(all_records)
+        due_count = sum(1 for c in all_records if c.get("is_due"))
+        new_count = sum(1 for c in all_records if c.get("repetitions", 0) == 0)
+        learning_count = sum(1 for c in all_records if c.get("repetitions", 0) > 0)
+
+        return FlashcardListResponse(
+            document_id=document_id,
+            cards=cards,
+            total=total,
+            due_count=due_count,
+            new_count=new_count,
+            learning_count=learning_count,
+        )
+
+    def review_flashcard(self, flashcard_id: str, rating: str) -> FlashcardReviewResponse:
+        card = self.repository.get_flashcard(flashcard_id)
+        schedule = calculate_review_schedule(
+            rating=rating,
+            repetitions=card.get("repetitions", 0),
+            ease_factor=card.get("ease_factor", 2.5),
+            interval_days=card.get("interval_days", 0),
+        )
+        result = self.repository.record_flashcard_review(
+            flashcard_id=flashcard_id,
+            rating=rating,
+            repetitions=schedule.repetitions,
+            ease_factor=schedule.ease_factor,
+            interval_days=schedule.interval_days,
+            next_review=schedule.next_review,
+        )
+        self.repository.add_history(
+            "Reviewed flashcard",
+            card["document_id"],
+            card["source_filename"],
+            f"Rated '{rating}' · Next review in {schedule.interval_days}d",
+        )
+        return FlashcardReviewResponse(
+            card=FlashcardResponse(**result["card"]),
+            rating=rating,
+            previous_interval=result["previous_interval"],
+            new_interval=result["new_interval"],
+            previous_ease_factor=result["previous_ease_factor"],
+            new_ease_factor=result["new_ease_factor"],
+            next_review=result["next_review"],
+        )
+
+    def get_flashcard(self, flashcard_id: str) -> FlashcardResponse:
+        record = self.repository.get_flashcard(flashcard_id)
+        return FlashcardResponse(**record)

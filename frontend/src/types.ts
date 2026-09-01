@@ -65,3 +65,42 @@ export type HistoryItem = {
   detail: string;
 };
 
+export type Flashcard = {
+  id: string;
+  document_id: string;
+  question: string;
+  answer: string;
+  source_page: number;
+  source_filename: string;
+  difficulty: string;
+  repetitions: number;
+  ease_factor: number;
+  interval_days: number;
+  next_review: string;
+  last_reviewed?: string | null;
+  created_at: string;
+  is_due: boolean;
+};
+
+export type FlashcardRating = "again" | "hard" | "good" | "easy";
+
+export type FlashcardListResponse = {
+  document_id?: string | null;
+  cards: Flashcard[];
+  total: number;
+  due_count: number;
+  new_count: number;
+  learning_count: number;
+};
+
+export type FlashcardReviewResponse = {
+  card: Flashcard;
+  rating: FlashcardRating;
+  previous_interval: number;
+  new_interval: number;
+  previous_ease_factor: number;
+  new_ease_factor: number;
+  next_review: string;
+};
+
+
