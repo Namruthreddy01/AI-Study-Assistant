@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, File, UploadFile, status
 
 from app.api.dependencies import get_study_service
 from app.core.errors import InvalidDocumentError
-from app.models.schemas import DocumentResponse
+from app.models.schemas import DocumentDeleteResponse, DocumentDetailResponse, DocumentResponse
 from app.services.study_service import StudyService
 
 
@@ -12,6 +12,20 @@ router = APIRouter(prefix="/api/documents", tags=["Documents"])
 @router.get("", response_model=list[DocumentResponse])
 def list_documents(service: StudyService = Depends(get_study_service)) -> list[dict]:
     return service.list_documents()
+
+
+@router.get("/{document_id}", response_model=DocumentDetailResponse)
+def get_document_details(
+    document_id: str, service: StudyService = Depends(get_study_service)
+) -> DocumentDetailResponse:
+    return service.get_document_details(document_id)
+
+
+@router.delete("/{document_id}", response_model=DocumentDeleteResponse)
+def delete_document(
+    document_id: str, service: StudyService = Depends(get_study_service)
+) -> DocumentDeleteResponse:
+    return service.delete_document(document_id)
 
 
 @router.post("/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED)

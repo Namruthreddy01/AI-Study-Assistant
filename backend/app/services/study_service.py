@@ -10,6 +10,8 @@ from app.core.config import Settings
 from app.core.errors import GenerationError, InvalidDocumentError
 from app.models.schemas import (
     ChatResponse,
+    DocumentDeleteResponse,
+    DocumentDetailResponse,
     FlashcardListResponse,
     FlashcardResponse,
     FlashcardReviewResponse,
@@ -82,6 +84,40 @@ class StudyService:
     def list_documents(self) -> list[dict[str, Any]]:
         return self.repository.list_documents()
 
+    def get_document(self, document_id: str) -> dict[str, Any]:
+        return self.repository.get_document(document_id)
+
+    def get_document_details(self, document_id: str) -> DocumentDetailResponse:
+        record = self.repository.get_document_details(document_id)
+        return DocumentDetailResponse(**record)
+
+    def delete_document(self, document_id: str) -> DocumentDeleteResponse:
+        record = self.repository.delete_document(document_id)
+        self.vector_store.delete(document_id)
+        pdf_file = self.settings.upload_path / f"{document_id}.pdf"
+        pdf_file.unlink(missing_ok=True)
+        self.repository.add_history(
+            "Deleted document", document_id, record["filename"], "Document and vector indexes removed."
+        )
+        return DocumentDeleteResponse(
+            id=document_id,
+            filename=record["filename"],
+            deleted=True,
+            message=f"Document '{record['filename']}' deleted successfully.",
+        )
+
+    def _normalize_document_ids(self, document_ids: list[str] | str) -> list[str]:
+        if isinstance(document_ids, str):
+            ids = [document_ids]
+        else:
+            ids = list(document_ids)
+        unique_ids = list(dict.fromkeys(ids))
+        if not unique_ids:
+            raise InvalidDocumentError("Please select at least one document.")
+        for doc_id in unique_ids:
+            self.repository.get_document(doc_id)
+        return unique_ids
+
     def _document_and_chunks(self, document_id: str) -> tuple[dict[str, Any], list[TextChunk]]:
         document = self.repository.get_document(document_id)
         chunks = self.vector_store.load_chunks(document_id)
@@ -96,6 +132,22 @@ class StudyService:
         )
         return context[:limit]
 
+    def _full_context_multi(
+        self, document_ids: list[str], limit: int = 18000
+    ) -> tuple[str, list[str]]:
+        all_chunks: list[TextChunk] = []
+        doc_names: list[str] = []
+        per_doc_limit = max(2, limit // (len(document_ids) * 900))
+        for doc_id in document_ids:
+            doc = self.repository.get_document(doc_id)
+            doc_names.append(doc["filename"])
+            chunks = self.vector_store.load_chunks(doc_id)
+            all_chunks.extend(chunks[:per_doc_limit])
+        context = "\n\n".join(
+            f"[{chunk.filename} Page {chunk.page}] {chunk.text}" for chunk in all_chunks
+        )
+        return context[:limit], doc_names
+
     @staticmethod
     def _source(chunk: TextChunk, score: float) -> SourceResponse:
         excerpt = chunk.text[:220].rstrip()
@@ -107,10 +159,12 @@ class StudyService:
             score=round(score, 3),
         )
 
-    async def answer_question(self, document_id: str, question: str) -> ChatResponse:
-        self._document_and_chunks(document_id)
+    async def answer_question(
+        self, document_ids: list[str] | str, question: str
+    ) -> ChatResponse:
+        ids = self._normalize_document_ids(document_ids)
         query = self.embedder.embed([question])[0]
-        matches = self.vector_store.search(document_id, query, limit=4)
+        matches = self.vector_store.search_multiple(ids, query, limit=6, per_doc_limit=4)
         grounded_matches = [
             (chunk, score) for chunk, score in matches if score >= self.MIN_RELEVANCE
         ]
@@ -125,27 +179,49 @@ class StudyService:
             for chunk, _ in grounded_matches
         )
         answer = await self.llm.answer(question, context)
-        document = self.repository.get_document(document_id)
-        self.repository.add_history("Asked AI", document_id, document["filename"], question[:100])
+        if len(ids) == 1:
+            document = self.repository.get_document(ids[0])
+            self.repository.add_history("Asked AI", ids[0], document["filename"], question[:100])
+        else:
+            docs = [self.repository.get_document(doc_id) for doc_id in ids]
+            names = ", ".join(d["filename"] for d in docs)
+            self.repository.add_history(
+                "Asked AI (Multi-doc)",
+                ",".join(ids),
+                f"{len(ids)} documents",
+                f"Q: {question[:80]} | Docs: {names[:100]}",
+            )
         return ChatResponse(
             answer=answer,
             sources=[self._source(chunk, score) for chunk, score in grounded_matches],
             grounded=True,
         )
 
-    async def generate_summary(self, document_id: str, length: str) -> SummaryResponse:
-        document = self.repository.get_document(document_id)
-        context = self._full_context(document_id)
+    async def generate_summary(
+        self, document_ids: list[str] | str, length: str
+    ) -> SummaryResponse:
+        ids = self._normalize_document_ids(document_ids)
+        context, doc_names = self._full_context_multi(ids)
         instruction = (
             "Return keys overview, key_points, important_concepts, and exam_focus. "
-            f"Make a {length} summary. Every list must contain concise strings."
+            f"Make a {length} summary of the provided material. Every list must contain concise strings."
         )
         payload = await self.llm.generate_json("summary", context, instruction)
         try:
             summary = SummaryResponse(**payload)
         except Exception as error:
             raise GenerationError("Could not create a structured summary.") from error
-        self.repository.add_history("Generated summary", document_id, document["filename"], length)
+
+        if len(ids) == 1:
+            doc = self.repository.get_document(ids[0])
+            self.repository.add_history("Generated summary", ids[0], doc["filename"], length)
+        else:
+            self.repository.add_history(
+                "Generated summary (Multi-doc)",
+                ",".join(ids),
+                f"{len(ids)} documents",
+                f"{length} summary across: {', '.join(doc_names)[:100]}",
+            )
         return summary
 
     @staticmethod

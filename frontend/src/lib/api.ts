@@ -1,5 +1,7 @@
 import type {
   ChatMessage,
+  DocumentDeleteResponse,
+  DocumentDetail,
   DocumentItem,
   Flashcard,
   FlashcardListResponse,
@@ -25,26 +27,33 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   documents: () => request<DocumentItem[]>("/api/documents"),
+  documentDetails: (id: string) => request<DocumentDetail>(`/api/documents/${id}`),
+  deleteDocument: (id: string) =>
+    request<DocumentDeleteResponse>(`/api/documents/${id}`, { method: "DELETE" }),
   upload: async (file: File) => {
     const form = new FormData();
     form.append("file", file);
     return request<DocumentItem>("/api/documents/upload", { method: "POST", body: form });
   },
-  chat: (documentId: string, question: string) =>
-    request<{ answer: string; sources: ChatMessage["sources"]; grounded: boolean }>(
+  chat: (documentIds: string | string[], question: string) => {
+    const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
+    return request<{ answer: string; sources: ChatMessage["sources"]; grounded: boolean }>(
       "/api/study/chat",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ document_id: documentId, question })
+        body: JSON.stringify({ document_ids: ids, question })
       }
-    ),
-  summary: (documentId: string) =>
-    request<Summary>("/api/study/summary", {
+    );
+  },
+  summary: (documentIds: string | string[], length: "short" | "detailed" = "short") => {
+    const ids = Array.isArray(documentIds) ? documentIds : [documentIds];
+    return request<Summary>("/api/study/summary", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ document_id: documentId, length: "short" })
-    }),
+      body: JSON.stringify({ document_ids: ids, length })
+    });
+  },
   mcqs: (documentId: string, count: number, difficulty: string) =>
     request<{ document_id: string; questions: Mcq[] }>("/api/study/mcqs", {
       method: "POST",

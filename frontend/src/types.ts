@@ -5,6 +5,24 @@ export type DocumentItem = {
   chunks: number;
   status: "processed" | "failed";
   created_at: string;
+  flashcard_count?: number;
+};
+
+export type DocumentDetail = {
+  id: string;
+  filename: string;
+  pages: number;
+  chunks: number;
+  status: "processed" | "failed";
+  created_at: string;
+  flashcard_count: number;
+};
+
+export type DocumentDeleteResponse = {
+  id: string;
+  filename: string;
+  deleted: boolean;
+  message: string;
 };
 
 export type Source = {

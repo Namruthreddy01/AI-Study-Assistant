@@ -29,14 +29,14 @@ router = APIRouter(prefix="/api/study", tags=["Study"])
 async def chat(
     request: ChatRequest, service: StudyService = Depends(get_study_service)
 ) -> ChatResponse:
-    return await service.answer_question(request.document_id, request.question)
+    return await service.answer_question(request.document_ids, request.question)
 
 
 @router.post("/summary", response_model=SummaryResponse)
 async def summary(
     request: SummaryRequest, service: StudyService = Depends(get_study_service)
 ) -> SummaryResponse:
-    return await service.generate_summary(request.document_id, request.length)
+    return await service.generate_summary(request.document_ids, request.length)
 
 
 @router.post("/mcqs", response_model=McqResponse)

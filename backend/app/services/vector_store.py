@@ -70,3 +70,19 @@ class VectorStore:
             order = np.argsort(scores)[::-1][:count]
             pairs = ((int(position), float(scores[position])) for position in order)
         return [(chunks[position], float(score)) for position, score in pairs if position >= 0]
+
+    def search_multiple(
+        self, document_ids: list[str], query: np.ndarray, limit: int = 6, per_doc_limit: int = 4
+    ) -> list[tuple[TextChunk, float]]:
+        unique_ids = list(dict.fromkeys(document_ids))
+        candidates: list[tuple[TextChunk, float]] = []
+        for doc_id in unique_ids:
+            doc_results = self.search(doc_id, query, limit=per_doc_limit)
+            candidates.extend(doc_results)
+        candidates.sort(key=lambda item: item[1], reverse=True)
+        return candidates[:limit]
+
+    def delete(self, document_id: str) -> None:
+        self._vectors_file(document_id).unlink(missing_ok=True)
+        self._index_file(document_id).unlink(missing_ok=True)
+        self._chunks_file(document_id).unlink(missing_ok=True)

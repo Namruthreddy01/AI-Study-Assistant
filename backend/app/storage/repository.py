@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, Integer, String, Text, create_engine, select
+from sqlalchemy import DateTime, Float, Integer, String, Text, create_engine, delete, func, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -171,6 +171,58 @@ class DatabaseRepository:
                 return self._document_dict(row)
         except SQLAlchemyError as error:
             raise StudyAssistantError("Could not read the selected document.") from error
+
+    def get_document_details(self, document_id: str) -> dict[str, Any]:
+        try:
+            with self.sessions() as session:
+                row = session.get(DocumentRow, document_id)
+                if row is None:
+                    raise NotFoundError("The selected document was not found.")
+                flashcard_count = session.scalar(
+                    select(func.count(FlashcardRow.id)).where(FlashcardRow.document_id == document_id)
+                ) or 0
+                data = self._document_dict(row)
+                data["flashcard_count"] = int(flashcard_count)
+                return data
+        except NotFoundError:
+            raise
+        except SQLAlchemyError as error:
+            raise StudyAssistantError("Could not read document details.") from error
+
+    def delete_document(self, document_id: str) -> dict[str, Any]:
+        try:
+            with self.sessions.begin() as session:
+                row = session.get(DocumentRow, document_id)
+                if row is None:
+                    raise NotFoundError("The selected document was not found.")
+                doc_dict = self._document_dict(row)
+
+                # Find flashcards for this document
+                flashcard_ids = session.scalars(
+                    select(FlashcardRow.id).where(FlashcardRow.document_id == document_id)
+                ).all()
+
+                # Delete review history for those flashcards
+                if flashcard_ids:
+                    session.execute(
+                        delete(FlashcardReviewRow).where(
+                            FlashcardReviewRow.flashcard_id.in_(flashcard_ids)
+                        )
+                    )
+
+                # Delete flashcards
+                session.execute(
+                    delete(FlashcardRow).where(FlashcardRow.document_id == document_id)
+                )
+
+                # Delete document record
+                session.delete(row)
+
+                return doc_dict
+        except NotFoundError:
+            raise
+        except SQLAlchemyError as error:
+            raise StudyAssistantError("Could not delete document from database.") from error
 
     def add_flashcards(self, cards: list[dict[str, Any]]) -> list[dict[str, Any]]:
         records = [

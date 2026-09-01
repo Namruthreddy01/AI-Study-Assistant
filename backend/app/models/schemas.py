@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class DocumentResponse(BaseModel):
@@ -13,6 +13,23 @@ class DocumentResponse(BaseModel):
     created_at: datetime
 
 
+class DocumentDetailResponse(BaseModel):
+    id: str
+    filename: str
+    pages: int
+    chunks: int
+    status: Literal["processed", "failed"]
+    created_at: datetime
+    flashcard_count: int = 0
+
+
+class DocumentDeleteResponse(BaseModel):
+    id: str
+    filename: str
+    deleted: bool = True
+    message: str
+
+
 class SourceResponse(BaseModel):
     filename: str
     page: int
@@ -22,8 +39,22 @@ class SourceResponse(BaseModel):
 
 
 class ChatRequest(BaseModel):
-    document_id: str
+    document_id: str | None = None
+    document_ids: list[str] = Field(default_factory=list)
     question: str = Field(min_length=3, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_and_normalize_ids(self) -> "ChatRequest":
+        ids = list(self.document_ids)
+        if self.document_id and self.document_id not in ids:
+            ids.insert(0, self.document_id)
+        unique_ids = list(dict.fromkeys(ids))
+        if not unique_ids:
+            raise ValueError("At least one document must be selected.")
+        self.document_ids = unique_ids
+        if not self.document_id:
+            self.document_id = unique_ids[0]
+        return self
 
 
 class ChatResponse(BaseModel):
@@ -33,8 +64,22 @@ class ChatResponse(BaseModel):
 
 
 class SummaryRequest(BaseModel):
-    document_id: str
+    document_id: str | None = None
+    document_ids: list[str] = Field(default_factory=list)
     length: Literal["short", "detailed"] = "short"
+
+    @model_validator(mode="after")
+    def validate_and_normalize_ids(self) -> "SummaryRequest":
+        ids = list(self.document_ids)
+        if self.document_id and self.document_id not in ids:
+            ids.insert(0, self.document_id)
+        unique_ids = list(dict.fromkeys(ids))
+        if not unique_ids:
+            raise ValueError("At least one document must be selected.")
+        self.document_ids = unique_ids
+        if not self.document_id:
+            self.document_id = unique_ids[0]
+        return self
 
 
 class SummaryResponse(BaseModel):
