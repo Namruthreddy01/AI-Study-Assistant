@@ -13,13 +13,15 @@ import {
   LayoutDashboard,
   Lightbulb,
   ListChecks,
-  Sparkles
+  Sparkles,
+  TrendingUp
 } from "lucide-react";
 import { api } from "./lib/api";
 import { ChatPanel } from "./components/ChatPanel";
 import { DocumentLibrary } from "./components/DocumentLibrary";
 import { DocumentUploader } from "./components/DocumentUploader";
 import { FlashcardPanel } from "./components/FlashcardPanel";
+import { ProgressDashboard } from "./components/ProgressDashboard";
 import { QuizPanel } from "./components/QuizPanel";
 import type {
   ChatMessage,
@@ -36,6 +38,7 @@ import type {
 type View =
   | "dashboard"
   | "materials"
+  | "progress"
   | "ask"
   | "summary"
   | "mcqs"
@@ -46,6 +49,7 @@ type View =
 const nav = [
   { id: "dashboard" as View, label: "Overview", icon: LayoutDashboard },
   { id: "materials" as View, label: "Materials", icon: Files },
+  { id: "progress" as View, label: "Progress", icon: TrendingUp },
   { id: "ask" as View, label: "Ask AI", icon: BrainCircuit },
   { id: "summary" as View, label: "Summary", icon: FileText },
   { id: "mcqs" as View, label: "MCQ Quiz", icon: ListChecks },
@@ -250,6 +254,7 @@ export default function App() {
   const title: Record<View, string> = {
     dashboard: "Your study space",
     materials: "Study materials library",
+    progress: "Learning Analytics & Student Progress",
     ask: "Ask AI (Cross-Document)",
     summary: "Smart summary",
     mcqs: "Knowledge check",
@@ -380,6 +385,12 @@ export default function App() {
               onDeleteDoc={deleteDoc}
               onStudySelected={() => setView("ask")}
             />
+          </div>
+        )}
+
+        {view === "progress" && (
+          <div className="page">
+            <ProgressDashboard />
           </div>
         )}
 

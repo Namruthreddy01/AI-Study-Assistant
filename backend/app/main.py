@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import documents, study
+from app.api import analytics, documents, study
 from app.core.config import get_settings
 from app.core.errors import StudyAssistantError
 
@@ -33,6 +33,7 @@ async def study_error_handler(
 
 app.include_router(documents.router)
 app.include_router(study.router)
+app.include_router(analytics.router)
 
 
 @app.get("/health", tags=["Health"])

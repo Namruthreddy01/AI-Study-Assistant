@@ -199,3 +199,91 @@ class FlashcardReviewResponse(BaseModel):
     previous_ease_factor: float
     new_ease_factor: float
     next_review: datetime
+
+
+class AnalyticsOverviewResponse(BaseModel):
+    total_study_sessions: int
+    questions_asked: int
+    quizzes_completed: int
+    flashcards_reviewed: int
+    overall_quiz_accuracy: float
+    current_streak: int
+    longest_streak: int
+    active_study_days: int
+    last_study_date: str | None = None
+    total_documents: int
+    total_flashcards: int
+    mastery_score: float
+
+
+class DailyActivityItem(BaseModel):
+    date: str
+    study_sessions: int
+    quiz_attempts: int
+    flashcard_reviews: int
+    questions_asked: int
+
+
+class QuizAttemptItem(BaseModel):
+    id: str
+    document_id: str
+    document_name: str
+    score: int
+    total: int
+    accuracy: float
+    created_at: datetime
+
+
+class QuizAnalyticsResponse(BaseModel):
+    quizzes_completed: int
+    total_questions: int
+    correct_answers: int
+    incorrect_answers: int
+    overall_accuracy: float
+    difficulty_breakdown: dict[str, int] = Field(default_factory=dict)
+    recent_quizzes: list[QuizAttemptItem] = Field(default_factory=list)
+
+
+class FlashcardRatingsBreakdown(BaseModel):
+    again: int = 0
+    hard: int = 0
+    good: int = 0
+    easy: int = 0
+
+
+class FlashcardAnalyticsResponse(BaseModel):
+    total_cards: int
+    new_cards: int
+    learning_cards: int
+    due_cards: int
+    reviewed_cards: int
+    total_reviews: int
+    ratings: FlashcardRatingsBreakdown
+    average_ease_factor: float
+    retention_rate: float
+
+
+class DocumentAnalyticsItem(BaseModel):
+    id: str
+    filename: str
+    pages: int
+    chunks: int
+    flashcards_count: int
+    flashcards_reviewed_count: int
+    quizzes_completed: int
+    quiz_accuracy: float
+    study_sessions: int
+    questions_asked: int
+    mastery_score: float
+    last_studied_at: datetime | None = None
+
+
+class AchievementItem(BaseModel):
+    id: str
+    title: str
+    description: str
+    icon: str
+    unlocked: bool
+    progress: int
+    unlocked_at: datetime | None = None
+

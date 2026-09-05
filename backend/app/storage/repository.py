@@ -352,3 +352,46 @@ class DatabaseRepository:
                 return [self._history_dict(row) for row in rows]
         except SQLAlchemyError as error:
             raise StudyAssistantError("Could not read study history.") from error
+
+    def get_all_history(self, document_id: str | None = None) -> list[dict[str, Any]]:
+        try:
+            with self.sessions() as session:
+                query = select(HistoryRow).order_by(HistoryRow.created_at.asc())
+                if document_id:
+                    query = query.where(HistoryRow.document_id == document_id)
+                rows = session.scalars(query).all()
+                return [self._history_dict(row) for row in rows]
+        except SQLAlchemyError as error:
+            raise StudyAssistantError("Could not read study history.") from error
+
+    def list_flashcard_reviews(
+        self, document_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        try:
+            with self.sessions() as session:
+                if document_id:
+                    query = (
+                        select(FlashcardReviewRow)
+                        .join(FlashcardRow, FlashcardReviewRow.flashcard_id == FlashcardRow.id)
+                        .where(FlashcardRow.document_id == document_id)
+                        .order_by(FlashcardReviewRow.reviewed_at.asc())
+                    )
+                else:
+                    query = select(FlashcardReviewRow).order_by(FlashcardReviewRow.reviewed_at.asc())
+                rows = session.scalars(query).all()
+                return [
+                    {
+                        "id": row.id,
+                        "flashcard_id": row.flashcard_id,
+                        "rating": row.rating,
+                        "reviewed_at": row.reviewed_at,
+                        "previous_interval": row.previous_interval,
+                        "new_interval": row.new_interval,
+                        "previous_ease_factor": row.previous_ease_factor,
+                        "new_ease_factor": row.new_ease_factor,
+                    }
+                    for row in rows
+                ]
+        except SQLAlchemyError as error:
+            raise StudyAssistantError("Could not read flashcard reviews.") from error
+

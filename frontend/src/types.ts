@@ -121,4 +121,92 @@ export type FlashcardReviewResponse = {
   next_review: string;
 };
 
+export type AnalyticsOverview = {
+  total_study_sessions: number;
+  questions_asked: number;
+  quizzes_completed: number;
+  flashcards_reviewed: number;
+  overall_quiz_accuracy: number;
+  current_streak: number;
+  longest_streak: number;
+  active_study_days: number;
+  last_study_date: string | null;
+  total_documents: number;
+  total_flashcards: number;
+  mastery_score: number;
+};
+
+export type DailyActivity = {
+  date: string;
+  study_sessions: number;
+  quiz_attempts: number;
+  flashcard_reviews: number;
+  questions_asked: number;
+};
+
+export type QuizAttempt = {
+  id: string;
+  document_id: string;
+  document_name: string;
+  score: number;
+  total: number;
+  accuracy: number;
+  created_at: string;
+};
+
+export type QuizAnalytics = {
+  quizzes_completed: number;
+  total_questions: number;
+  correct_answers: number;
+  incorrect_answers: number;
+  overall_accuracy: number;
+  difficulty_breakdown: Record<string, number>;
+  recent_quizzes: QuizAttempt[];
+};
+
+export type FlashcardRatingsBreakdown = {
+  again: number;
+  hard: number;
+  good: number;
+  easy: number;
+};
+
+export type FlashcardAnalytics = {
+  total_cards: number;
+  new_cards: number;
+  learning_cards: number;
+  due_cards: number;
+  reviewed_cards: number;
+  total_reviews: number;
+  ratings: FlashcardRatingsBreakdown;
+  average_ease_factor: number;
+  retention_rate: number;
+};
+
+export type DocumentAnalytics = {
+  id: string;
+  filename: string;
+  pages: number;
+  chunks: number;
+  flashcards_count: number;
+  flashcards_reviewed_count: number;
+  quizzes_completed: number;
+  quiz_accuracy: number;
+  study_sessions: number;
+  questions_asked: number;
+  mastery_score: number;
+  last_studied_at: string | null;
+};
+
+export type Achievement = {
+  id: string;
+  title: string;
+  description: string;
+  icon: string;
+  unlocked: boolean;
+  progress: number;
+  unlocked_at?: string | null;
+};
+
+
 

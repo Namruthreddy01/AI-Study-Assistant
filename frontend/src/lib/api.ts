@@ -1,14 +1,20 @@
 import type {
+  Achievement,
+  AnalyticsOverview,
   ChatMessage,
+  DailyActivity,
+  DocumentAnalytics,
   DocumentDeleteResponse,
   DocumentDetail,
   DocumentItem,
   Flashcard,
+  FlashcardAnalytics,
   FlashcardListResponse,
   FlashcardRating,
   FlashcardReviewResponse,
   HistoryItem,
   Mcq,
+  QuizAnalytics,
   QuizScore,
   RevisionQuestion,
   Summary
@@ -91,6 +97,22 @@ export const api = {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ document_id: documentId, questions, answers })
     }),
-  history: () => request<HistoryItem[]>("/api/study/history")
+  history: () => request<HistoryItem[]>("/api/study/history"),
+  analyticsOverview: () => request<AnalyticsOverview>("/api/analytics/overview"),
+  analyticsActivity: (days: number = 30, documentId?: string) => {
+    const params = new URLSearchParams({ days: String(days) });
+    if (documentId) params.append("document_id", documentId);
+    return request<DailyActivity[]>(`/api/analytics/activity?${params.toString()}`);
+  },
+  analyticsQuiz: (documentId?: string) => {
+    const query = documentId ? `?document_id=${documentId}` : "";
+    return request<QuizAnalytics>(`/api/analytics/quiz${query}`);
+  },
+  analyticsFlashcards: (documentId?: string) => {
+    const query = documentId ? `?document_id=${documentId}` : "";
+    return request<FlashcardAnalytics>(`/api/analytics/flashcards${query}`);
+  },
+  analyticsDocuments: () => request<DocumentAnalytics[]>("/api/analytics/documents"),
+  analyticsAchievements: () => request<Achievement[]>("/api/analytics/achievements")
 };
 
